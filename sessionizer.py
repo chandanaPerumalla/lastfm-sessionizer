@@ -42,7 +42,8 @@ class Sessionizer:
         track_df_with_session_length = grouped_df.drop("session_id").select("*", unix_timestamp(
             "max_timestamp") - unix_timestamp("min_timestamp").alias("sessionLength")).orderBy("sessionLength".desc)
 
-        track_df_with_session_length.drop("sessionLength").limit(10).show(truncate=False)
+        track_df_with_session_length.drop("sessionLength").write.option("header", True).option("delimiter", "\t").csv(
+            "output")
 
 
 sessionizer = Sessionizer("lastfm-dataset-1K/userid-timestamp-artid-artname-traid-traname.tsv")
