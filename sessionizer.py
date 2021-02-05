@@ -1,7 +1,8 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, TimestampType
 from pyspark.sql.window import Window
-from pyspark.sql.functions import lag, unix_timestamp, when, concat_ws, collect_list
+from pyspark.sql.functions import lag, unix_timestamp, when, concat_ws, collect_list, sum as col_sum, min as col_min, \
+    max as col_max
 
 
 class Sessionizer:
@@ -30,20 +31,26 @@ class Sessionizer:
 
         track_df_with_lag = track_df.select("*", session_indicator.alias("session_indicator"))
 
-        session = sum("session_indicator").over(partition_window)
+        session = col_sum("session_indicator").over(partition_window)
 
         track_df_sessionized = track_df_with_lag.select("*", session.alias("session_id")).drop("session_indicator")
 
         grouped_df = track_df_sessionized \
-            .groupBy("user_id", "session_id").agg(min("timestamp").alias("min_timestamp"),
-                                                  max("timestamp").alias("max_timestamp"),
+            .groupBy("user_id", "session_id").agg(col_min("timestamp").alias("min_timestamp"),
+                                                  col_max("timestamp").alias("max_timestamp"),
                                                   concat_ws(",", collect_list("track_name")).alias("tracks_played"))
 
-        track_df_with_session_length = grouped_df.drop("session_id").select("*", unix_timestamp(
-            "max_timestamp") - unix_timestamp("min_timestamp").alias("sessionLength")).orderBy("sessionLength".desc)
+        track_df_with_session_length = grouped_df.drop("session_id").select("*", (unix_timestamp(
+            "max_timestamp") - unix_timestamp("min_timestamp")).alias("session_length")).orderBy("session_length",
+                                                                                                ascending=False)
 
-        track_df_with_session_length.drop("sessionLength").write.option("header", True).option("delimiter", "\t").csv(
-            "output")
+        track_df_with_session_length \
+            .drop("session_length").limit(10) \
+            .write \
+            .option("header", True) \
+            .option("delimiter", "\t") \
+            .mode("overwrite") \
+            .csv("output")
 
 
 sessionizer = Sessionizer("lastfm-dataset-1K/userid-timestamp-artid-artname-traid-traname.tsv")
